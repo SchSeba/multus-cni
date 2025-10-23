@@ -14,7 +14,7 @@ import (
 	"gopkg.in/k8snetworkplumbingwg/multus-cni.v4/pkg/types"
 )
 
-type ClientInterace interface {
+type ClientInterface interface {
 	GetPodResourceMap(pod *v1.Pod, resourceMap map[string]*types.ResourceInfo) error
 }
 
@@ -24,7 +24,7 @@ type draClient struct {
 	resourceClaimCache map[string]*resourcev1api.ResourceClaim
 }
 
-func NewClient(client resourcev1.ResourceV1Interface) ClientInterace {
+func NewClient(client resourcev1.ResourceV1Interface) ClientInterface {
 	logging.Debugf("NewClient: creating new DRA client")
 	return &draClient{
 		client:             client,
@@ -41,7 +41,7 @@ func (d *draClient) GetPodResourceMap(pod *v1.Pod, resourceMap map[string]*types
 	defer cancel()
 
 	for _, claimResource := range pod.Status.ResourceClaimStatuses { // (resourceClaimName/RequestedDevice)
-		claimName := claimResource.Name
+		claimName := *claimResource.ResourceClaimName
 		logging.Debugf("GetPodResourceMap: processing resource claim: %s", claimName)
 
 		// get resource claim
@@ -101,17 +101,23 @@ func (d *draClient) getDeviceID(ctx context.Context, result resourcev1api.Device
 			return "", err
 		}
 
-		for _, slice := range allResourceSlices.Items {
+		var matchingSlices []*resourcev1api.ResourceSlice
+		for i := range allResourceSlices.Items {
+			slice := &allResourceSlices.Items[i]
 			if slice.Spec.Driver == result.Driver && slice.Spec.Pool.Name == result.Pool {
-				resourceSlice = slice.DeepCopy()
-				break
+				matchingSlices = append(matchingSlices, slice)
 			}
 		}
 
-		if resourceSlice == nil {
+		if len(matchingSlices) == 0 {
 			logging.Errorf("getDeviceID: expected 1 resource slice for %s, got 0: no resource slice found", key)
 			return "", fmt.Errorf("expected 1 resource slice, got 0: no resource slice found")
 		}
+		if len(matchingSlices) > 1 {
+			logging.Errorf("getDeviceID: expected 1 resource slice for %s, got %d", key, len(matchingSlices))
+			return "", fmt.Errorf("expected 1 resource slice, got %d", len(matchingSlices))
+		}
+		resourceSlice = matchingSlices[0]
 		d.resourceSliceCache[key] = resourceSlice
 		logging.Debugf("getDeviceID: cached resource slice %s with %d devices", key, len(resourceSlice.Spec.Devices))
 	} else {

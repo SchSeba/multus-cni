@@ -46,7 +46,7 @@ var _ = Describe("DRA Client operations", func() {
 	Describe("GetPodResourceMap", func() {
 		var (
 			fakeClient *fake.Clientset
-			draClient  ClientInterace
+			draClient  ClientInterface
 		)
 
 		BeforeEach(func() {
